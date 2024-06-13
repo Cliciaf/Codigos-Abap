@@ -1,0 +1,80 @@
+    DATA: send_request       TYPE REF TO cl_bcs.
+    DATA: document           TYPE REF TO cl_document_bcs.
+    DATA: sender             TYPE REF TO cl_sapuser_bcs.
+    DATA: recipient          TYPE REF TO if_recipient_bcs.
+    DATA: exception_info TYPE REF TO if_os_exception_info,
+          bcs_exception  TYPE REF TO cx_bcs,
+          v_subj(100),
+          t_hex          TYPE solix_tab,
+          html_string    TYPE string,
+          xhtml_string   TYPE xstring,
+          app_type(50),
+          v_message(100),
+          v_mail         TYPE  sza5_d0700-smtp_addr,
+          dec15_2(15)    TYPE p DECIMALS 2.
+              
+  app_type = 'text/plain; charset=utf-8'.
+  
+  html_string = '<html>' &&
+                        '<head>' &&
+                            '<meta charset="UTF-8">' &&
+'</head>' &&
+     '<body>' &&
+        '<p><b>Teste</b><br>' &&.
+
+        CALL FUNCTION 'SCMS_STRING_TO_XSTRING'
+          EXPORTING
+            text     = html_string
+            mimetype = app_type
+          IMPORTING
+            buffer   = xhtml_string
+          EXCEPTIONS
+            failed   = 1
+            OTHERS   = 2.
+
+        CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+          EXPORTING
+            buffer     = xhtml_string
+*           APPEND_TO_TABLE       = ' '
+* IMPORTING
+*           OUTPUT_LENGTH         =
+          TABLES
+            binary_tab = t_hex.
+
+        send_request->set_message_subject( EXPORTING ip_subject = CONV string( v_subj ) ) .
+
+        document = cl_document_bcs=>create_document(
+          i_type    = 'HTM'
+          i_hex    = t_hex
+*      i_subject = CONV so_obj_des( v_subj )
+          i_subject = space ).
+
+        CALL METHOD send_request->set_document( document ).
+
+        sender = cl_sapuser_bcs=>create( usuario ).
+
+        CALL METHOD send_request->set_sender
+          EXPORTING
+            i_sender = sender.
+
+        recipient = cl_cam_address_bcs=>create_internet_address( v_mail ).
+
+        CALL METHOD send_request->add_recipient
+          EXPORTING
+            i_recipient  = recipient
+            i_blind_copy = abap_false. "não coloca outro remetente em copia
+
+        CALL METHOD send_request->set_status_attributes
+          EXPORTING
+            i_requested_status = status_mail
+            i_status_mail      = status_mail.
+
+        CALL METHOD send_request->send( i_with_error_screen = 'X' ).
+
+        COMMIT WORK.
+
+      CATCH cx_bcs INTO bcs_exception.
+      CATCH cx_sy_ref_is_initial INTO lref_excep.
+
+        v_message = bcs_exception->get_text( ).
+        MESSAGE e000(su) WITH v_message.
